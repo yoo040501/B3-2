@@ -1,22 +1,13 @@
-<<<<<<< HEAD
-import subprocess
-
-=======
 import argparse
 import subprocess
+import os
 
-
->>>>>>> 36b2676 (Init: add main CLI)
 def get_git_status():
     result = subprocess.run(
         ["git", "status", "--short"],
         capture_output=True,
         text=True
     )
-<<<<<<< HEAD
-
-=======
->>>>>>> 36b2676 (Init: add main CLI)
     return result.stdout
 
 
@@ -26,25 +17,12 @@ def get_git_diff():
         capture_output=True,
         text=True
     )
-<<<<<<< HEAD
-
-    return result.stdout
-
-
-status = get_git_status()
-diff = get_git_diff()
-
-print("=== Git Status ===")
-print(status)
-
-print("=== Git Diff ===")
-print(diff)
-=======
     return result.stdout
 
 
 def main():
     parser = argparse.ArgumentParser()
+
 
     parser.add_argument(
         "command",
@@ -72,6 +50,13 @@ def main():
         "--safe-mode",
         action="store_true"
     )
+
+    api_key = os.getenv("AI_API_KEY")
+
+    if not api_key:
+        print("[ERROR] AI_API_KEY 환경변수가 설정되지 않았습니다.")
+        return
+    
     args = parser.parse_args()
 
     status = get_git_status()
@@ -98,4 +83,4 @@ def main():
 
 if __name__ == "__main__":
     main()
->>>>>>> 36b2676 (Init: add main CLI)
+# test
