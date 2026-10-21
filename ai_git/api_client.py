@@ -1,7 +1,7 @@
 import time
 import requests
 
-def call_ai(api_key, prompt, model):
+def call_ai(api_key, prompt, model, temperature, max_tokens):
     url = "https://copa.codyssey.kr/v1/chat/completions"
 
     headers = {
@@ -15,7 +15,9 @@ def call_ai(api_key, prompt, model):
                 "role": "user",
                 "content": prompt
             }
-        ]
+        ],
+        "temperature": temperature,
+        "max_tokens": max_tokens
     }
 
     for attempt in range(2):

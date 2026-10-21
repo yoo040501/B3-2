@@ -11,7 +11,7 @@ def parse_args():
 
     parser.add_argument(
     "--model",
-    default="gpt-5-mini"
+    default="gpt-5.4 mini"
     )
 
     parser.add_argument(
