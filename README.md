@@ -2,7 +2,7 @@
 
 Git 변경 사항을 수집하여 AI API에 전달하고, 변경 내용을 기반으로 **커밋 메시지와 Pull Request 초안**을 자동 생성하는 Python CLI 프로그램입니다.
 
-`git status`와 `git diff` 결과를 AI 입력 데이터로 사용하며, 프롬프트를 통해 커밋 및 PR 형식을 제어합니다.
+`git status`와 `git diff` 결과를 AI 입력 데이터로 사용하며, 프롬프트를 통해 커밋 및 PR의 출력 형식을 제어합니다.
 
 ---
 
@@ -16,9 +16,9 @@ Git 변경 사항을 수집하여 AI API에 전달하고, 변경 내용을 기�
 - 모델, `temperature`, `max_tokens` CLI 옵션 지원
 - API Key 환경변수 관리
 - API 요청 실패 및 네트워크 오류 처리
-- API 요청 실패 시 재시도
-- Safe Mode를 통한 전송 데이터 보호
-- AI 생성 결과 형식 검증
+- API 요청 실패 시 제한된 횟수만 재시도
+- Safe Mode를 이용한 민감정보 마스킹
+- AI 생성 결과의 제목 길이 및 PR 구조 검증
 - 변경 사항이 없을 경우 API를 호출하지 않고 종료
 
 ---
@@ -47,14 +47,14 @@ B3-2/
 | 파일 | 역할 |
 | --- | --- |
 | `main.py` | 프로그램 실행 진입점 |
-| `ai_git/run.py` | Git 수집 → 프롬프트 생성 → API 호출 → 검증 → 출력 흐름 관리 |
-| `ai_git/cli.py` | `commit`, `pr` 명령 및 CLI 옵션 처리 |
-| `ai_git/api_client.py` | AI REST API 호출, timeout 및 오류/재시도 처리 |
+| `ai_git/run.py` | Git 수집 → Safe Mode → 프롬프트 생성 → API 호출 → 검증 → 출력 흐름 관리 |
+| `ai_git/cli.py` | `commit`, `pr` 명령과 CLI 옵션 처리 |
+| `ai_git/api_client.py` | AI REST API 호출, timeout 및 재시도 처리 |
 | `ai_git/git_utils.py` | `git status`, `git diff` 실행 및 결과 수집 |
 | `ai_git/prompts.py` | Commit / PR용 프롬프트 생성 |
-| `ai_git/sanitizer.py` | Safe Mode에서 AI에 전달할 diff 전처리 |
-| `ai_git/validator.py` | 생성된 Commit / PR의 길이 및 형식 검증 |
-| `ai_git/__init__.py` | `ai_git` 패키지 정의 |
+| `ai_git/sanitizer.py` | 이메일, API Key, Bearer Token 마스킹 |
+| `ai_git/validator.py` | Commit / PR 출력 형식 검증 |
+| `ai_git/__init__.py` | `ai_git` Python 패키지 정의 |
 
 ---
 
@@ -77,7 +77,7 @@ REST API는 HTTP를 이용하여 프로그램이 외부 서버에 요청을 보�
 전체 흐름은 다음과 같습니다.
 
 ```text
-Git status / Git diff 수집
+git status / git diff 수집
         ↓
 프롬프트 생성
         ↓
@@ -101,23 +101,23 @@ Commit / PR 출력
 
 이 프로젝트에서는 AI에게 입력 데이터를 전달하고 새로운 텍스트 생성을 요청하기 때문에 `POST` 방식을 사용합니다.
 
-요청에는 다음과 같은 정보가 포함됩니다.
+API 요청에는 다음 정보가 포함됩니다.
 
 ```text
 URL
-→ API 요청 주소
+→ 요청할 AI API 주소
 
 Headers
 → API Key 등 인증 정보
 
 JSON Body
-→ model, messages, temperature, max_tokens 등
+→ model, messages, temperature, max_tokens 등의 요청 데이터
 
 Response
-→ 서버가 반환한 HTTP 응답
+→ AI 서버가 반환한 HTTP 응답
 ```
 
-AI 응답은 JSON 형태로 받은 뒤 생성된 텍스트를 추출하여 사용합니다.
+AI 서버가 반환한 JSON 응답에서 생성된 텍스트를 추출하여 커밋 메시지 또는 PR 초안으로 사용합니다.
 
 ---
 
@@ -157,6 +157,8 @@ API Key는 소스 코드나 GitHub 저장소에 직접 저장하지 않습니다
 python3 main.py commit
 ```
 
+현재 Git 변경사항을 분석하여 커밋 메시지를 생성합니다.
+
 예시:
 
 ```text
@@ -173,6 +175,8 @@ Feat: AI 기반 커밋 메시지 생성 기능 추가
 ```bash
 python3 main.py pr
 ```
+
+현재 Git 변경사항을 분석하여 PR 제목과 본문 초안을 생성합니다.
 
 예시:
 
@@ -201,11 +205,13 @@ AI 기반 Commit / PR 자동 생성 기능 추가
 
 ### Model
 
-기본 모델을 사용하지 않고 직접 모델을 지정할 수 있습니다.
+사용할 AI 모델을 지정합니다.
 
 ```bash
 python3 main.py commit --model gpt-5.4-mini
 ```
+
+기본 모델은 `gpt-5.4-mini`입니다.
 
 ### Temperature
 
@@ -213,12 +219,18 @@ python3 main.py commit --model gpt-5.4-mini
 python3 main.py commit --temperature 0.3
 ```
 
-`temperature`는 생성 결과의 다양성을 조절합니다.
+`temperature`는 AI가 생성하는 결과의 다양성을 조절합니다.
 
 - 낮은 값: 비교적 일관되고 정형화된 결과
-- 높은 값: 표현이 다양해질 수 있음
+- 높은 값: 보다 다양한 표현의 결과
 
-커밋 메시지와 PR처럼 일정한 형식이 필요한 경우 낮은 값을 사용하는 것이 적합합니다.
+커밋 메시지와 PR처럼 일정한 형식이 필요한 작업에서는 비교적 낮은 값을 사용하는 것이 적합합니다.
+
+기본값:
+
+```text
+0.3
+```
 
 ### Max Tokens
 
@@ -226,7 +238,13 @@ python3 main.py commit --temperature 0.3
 python3 main.py pr --max-tokens 500
 ```
 
-`max_tokens`는 AI가 한 번의 요청에서 생성할 수 있는 최대 출력량을 제한합니다.
+`max_tokens`는 AI가 생성할 수 있는 최대 출력 토큰 수를 제한합니다.
+
+기본값:
+
+```text
+500
+```
 
 ### 옵션 조합
 
@@ -241,9 +259,11 @@ python3 main.py pr \
 
 ## 8. Safe Mode
 
-`git diff`에는 API Key, 이메일, Token 등의 민감정보가 포함될 수 있습니다.
+`git diff`에는 API Key, 이메일 주소, 인증 Token 등 외부 AI API에 그대로 전달하고 싶지 않은 정보가 포함될 수 있습니다.
 
-Safe Mode를 활성화하려면 다음과 같이 실행합니다.
+Safe Mode는 AI API에 데이터를 전달하기 전에 특정 민감정보 패턴을 정규표현식으로 찾아 마스킹합니다.
+
+사용 방법:
 
 ```bash
 python3 main.py commit --safe-mode
@@ -255,32 +275,61 @@ python3 main.py commit --safe-mode
 python3 main.py pr --safe-mode
 ```
 
-Safe Mode에서는 `sanitizer.py`를 통해 AI API에 전달하기 전 diff를 전처리하여 민감정보 노출 가능성을 줄입니다.
+현재 Safe Mode에서 마스킹하는 항목은 다음과 같습니다.
+
+| 항목 | 마스킹 결과 |
+| --- | --- |
+| 이메일 주소 | `[REDACTED_EMAIL]` |
+| API Key 형태의 값 | `[REDACTED_API_KEY]` |
+| Bearer Token | `[REDACTED_TOKEN]` |
+
+예를 들어 다음과 같은 diff가 있다면:
+
+```text
+email=test@example.com
+API_KEY="abcdef123456"
+Authorization: Bearer token123456
+```
+
+Safe Mode에서는 다음과 같이 변환한 뒤 AI API로 전달합니다.
+
+```text
+email=[REDACTED_EMAIL]
+API_KEY=[REDACTED_API_KEY]
+Authorization: Bearer [REDACTED_TOKEN]
+```
+
+전체 처리 과정은 다음과 같습니다.
 
 ```text
 git diff
    ↓
-Safe Mode
+Safe Mode 활성화 여부 확인
    ↓
-민감정보 마스킹 / 전송 데이터 제한
+이메일 / API Key / Bearer Token 탐지
    ↓
-AI API
+민감정보 마스킹
+   ↓
+AI API 전달
 ```
 
-Safe Mode가 모든 민감정보를 완벽하게 탐지하는 것은 아니므로 실제 전송 전 Git 변경 내용을 확인해야 합니다.
+Safe Mode는 정규표현식으로 정의된 패턴을 기준으로 동작하기 때문에 모든 종류의 민감정보를 완벽하게 탐지하는 것은 아닙니다.
+
+따라서 생성형 AI에 전달하기 전에 실제 Git 변경 내용을 사용자가 확인하는 것이 필요합니다.
 
 ---
 
 ## 9. Commit 생성 규칙
 
-Commit 프롬프트에는 다음 규칙을 적용합니다.
+Commit 프롬프트에는 다음 규칙을 전달합니다.
 
 - 첫 줄은 커밋 제목
 - Conventional Commit 형식 사용
-- 제목은 50자 이내 권장
-- 최대 72자
-- 본문에는 핵심 변경 내용을 bullet 형태로 작성
-- 불필요한 추가 설명은 생성하지 않도록 요청
+- 제목은 가능하면 50자 이내
+- 제목은 최대 72자
+- 제목 다음에는 빈 줄 사용
+- 본문에는 핵심 변경 사항을 bullet 형태로 작성
+- 불필요한 설명은 출력하지 않도록 요청
 
 예:
 
@@ -295,9 +344,9 @@ Feat: AI API 연동 기능 추가
 
 ## 10. PR 생성 규칙
 
-PR 제목은 최대 80자로 생성하도록 합니다.
+PR 제목은 최대 80자로 생성하도록 요청합니다.
 
-본문은 다음 구조를 사용합니다.
+PR 본문은 다음 구조를 사용합니다.
 
 ```text
 ## Why
@@ -310,31 +359,60 @@ PR 제목은 최대 80자로 생성하도록 합니다.
 - 테스트 방법
 ```
 
-각 섹션에는 최소 하나 이상의 bullet 항목을 포함하도록 프롬프트를 구성합니다.
+각 섹션에는 변경 이유, 변경 내용, 테스트 방법을 작성하도록 프롬프트를 구성합니다.
 
 ---
 
 ## 11. 출력 검증
 
-AI가 프롬프트의 요구사항을 항상 정확하게 지킨다는 보장은 없기 때문에 생성 결과를 별도로 검증합니다.
+AI에게 형식 규칙을 프롬프트로 전달하더라도 생성 결과가 항상 규칙을 만족한다는 보장은 없습니다.
 
-`validator.py`에서 다음 항목을 검사합니다.
+따라서 `validator.py`에서 생성된 결과를 한 번 더 검사합니다.
+
+### Commit 검증
+
+다음 항목을 확인합니다.
 
 ```text
-Commit
-- 제목 존재 여부
-- 제목 최대 72자
-
-PR
-- 제목 존재 여부
-- 제목 최대 80자
-- ## Why 존재 여부
-- ## What 존재 여부
-- ## How to Test 존재 여부
-- 필요한 출력 형식 만족 여부
+1. 커밋 메시지가 비어 있지 않은지 확인
+2. 첫 번째 줄을 커밋 제목으로 판단
+3. 커밋 제목이 72자를 초과하는지 확인
 ```
 
-프롬프트는 AI에게 원하는 결과를 요청하는 역할을 하고, validator는 실제 결과가 규칙을 만족하는지 확인하는 역할을 합니다.
+커밋 메시지가 비어 있으면:
+
+```text
+커밋 메시지가 비어 있습니다.
+```
+
+제목이 72자를 초과하면:
+
+```text
+커밋 제목이 72자를 초과했습니다.
+```
+
+### PR 검증
+
+다음 항목을 확인합니다.
+
+```text
+1. PR 내용이 비어 있지 않은지 확인
+2. 첫 번째 줄을 PR 제목으로 판단
+3. PR 제목이 80자를 초과하는지 확인
+4. ## Why 섹션 존재 여부 확인
+5. ## What 섹션 존재 여부 확인
+6. ## How to Test 섹션 존재 여부 확인
+```
+
+필수 섹션이 없으면 해당 섹션이 없다는 검증 결과를 반환합니다.
+
+예:
+
+```text
+## Why 섹션이 없습니다.
+```
+
+프롬프트는 AI에게 원하는 출력 형식을 요청하는 역할을 하고, validator는 실제 생성 결과가 기본 형식 조건을 만족하는지 확인하는 역할을 합니다.
 
 ---
 
@@ -356,7 +434,7 @@ Git 변경 사항이 없으면 AI API를 호출하지 않고 종료합니다.
 
 ### API 요청 실패
 
-AI 서버 오류 또는 네트워크 오류가 발생한 경우 오류 내용을 출력합니다.
+AI 서버 오류 또는 네트워크 오류가 발생하면 오류 내용을 출력합니다.
 
 예:
 
@@ -364,15 +442,15 @@ AI 서버 오류 또는 네트워크 오류가 발생한 경우 오류 내용을
 [WARN] AI API 호출 실패 (502), 시도 1/2
 ```
 
-일시적인 오류를 고려하여 제한된 횟수만 재시도하며, 과도한 API 호출은 수행하지 않습니다.
+일시적인 API 오류를 고려하여 제한된 횟수만 재시도합니다.
 
-또한 API 요청에 timeout을 적용하여 서버 응답이 없는 경우 무한정 대기하지 않도록 처리합니다.
+API 요청에는 timeout을 적용하여 서버가 응답하지 않는 상황에서 프로그램이 무한정 대기하지 않도록 처리합니다.
 
 ---
 
 ## 13. 다른 Git 프로젝트에서 사용
 
-프로그램이 저장된 위치와 분석할 Git 프로젝트의 위치는 같을 필요가 없습니다.
+프로그램의 저장 위치와 분석할 Git 프로젝트의 위치가 같을 필요는 없습니다.
 
 예를 들어 프로그램이 다음 위치에 있고:
 
@@ -380,13 +458,13 @@ AI 서버 오류 또는 네트워크 오류가 발생한 경우 오류 내용을
 /Users/user/B3-2
 ```
 
-분석할 Git 프로젝트가 다음 위치에 있다면:
+분석할 프로젝트가 다음 위치에 있다면:
 
 ```text
 /Users/user/eval1
 ```
 
-먼저 분석할 프로젝트로 이동합니다.
+먼저 분석하려는 Git 프로젝트로 이동합니다.
 
 ```bash
 cd /Users/user/eval1
@@ -398,13 +476,13 @@ cd /Users/user/eval1
 python3 /Users/user/B3-2/main.py commit
 ```
 
-PR 초안 생성:
+PR 초안도 동일하게 생성할 수 있습니다.
 
 ```bash
 python3 /Users/user/B3-2/main.py pr
 ```
 
-`git status`와 `git diff`는 프로그램 파일의 위치가 아니라 **현재 실행 중인 Git 프로젝트를 기준으로 수집**합니다.
+`git status`와 `git diff`는 프로그램 파일의 위치가 아니라 현재 작업 중인 Git 저장소를 기준으로 실행됩니다.
 
 ---
 
@@ -423,13 +501,14 @@ python3 main.py commit / pr
             ↓
         git diff
             ↓
-     Safe Mode 처리
+   Safe Mode 활성화 시
+     민감정보 마스킹
             ↓
    Commit / PR 프롬프트
             ↓
        AI REST API
             ↓
-        응답 처리
+        JSON 응답 처리
             ↓
        출력 형식 검증
             ↓
@@ -440,25 +519,27 @@ python3 main.py commit / pr
 
 ## 15. 주의사항
 
-- API Key는 환경변수로만 관리합니다.
+- API Key는 환경변수로 관리합니다.
 - API Key를 GitHub 저장소에 업로드하지 않습니다.
-- `git diff`에 민감정보가 포함되어 있는지 확인합니다.
-- 필요한 경우 `--safe-mode`를 사용합니다.
-- AI API 호출 횟수를 최소화합니다.
-- AI가 생성한 결과는 최종 정답이 아닙니다.
-- 생성된 Commit / PR 내용은 사용자가 검토한 후 실제 작업에 사용합니다.
+- `git diff`에는 코드뿐 아니라 민감정보가 포함될 수 있습니다.
+- 민감한 변경사항이 있는 경우 `--safe-mode`를 사용합니다.
+- Safe Mode가 모든 민감정보를 탐지하는 것은 아닙니다.
+- AI API의 불필요한 호출을 피합니다.
+- 한 번의 실행에서 API 호출 횟수를 최소화합니다.
+- AI가 생성한 커밋 메시지와 PR 초안은 최종 정답이 아닙니다.
+- 생성 결과를 사용자가 검토한 후 실제 Git 작업에 사용합니다.
 
 ---
 
 ## 16. 실행 예시
 
-기본 Commit 생성:
+커밋 메시지 생성:
 
 ```bash
 python3 main.py commit
 ```
 
-PR 생성:
+PR 초안 생성:
 
 ```bash
 python3 main.py pr
@@ -470,7 +551,7 @@ Safe Mode:
 python3 main.py commit --safe-mode
 ```
 
-옵션 적용:
+CLI 옵션 적용:
 
 ```bash
 python3 main.py pr \
@@ -484,17 +565,18 @@ python3 main.py pr \
 
 ## 17. 학습 내용
 
-이 프로젝트를 통해 다음 내용을 학습할 수 있습니다.
+이 프로젝트를 통해 다음 내용을 학습합니다.
 
 - REST API의 기본 구조
-- HTTP POST 요청과 JSON 데이터 처리
-- AI API 요청 및 응답 처리
-- API Key 환경변수 관리
-- 네트워크/API 오류 및 예외 처리
+- HTTP POST 요청 방식
+- JSON 요청 및 응답 처리
+- AI API 호출 및 예외 처리
+- 환경변수를 이용한 API Key 관리
 - Python `subprocess`를 이용한 Git 명령 실행
 - `git status`, `git diff` 결과를 프로그램 입력으로 연결하는 방법
-- CLI 프로그램 구성 방법
-- AI 결과 품질을 조절하기 위한 프롬프트 설계
+- CLI 프로그램 구성 및 옵션 처리
+- Commit / PR용 프롬프트 설계
 - `temperature`, `max_tokens` 등 AI API 파라미터의 역할
-- AI 결과에 대한 후처리 및 형식 검증
-- 여러 모듈을 Python 패키지 형태로 분리하는 방법
+- 정규표현식을 이용한 민감정보 마스킹
+- AI 생성 결과에 대한 후처리 및 형식 검증
+- Python 코드를 패키지 및 모듈 단위로 분리하는 방법
