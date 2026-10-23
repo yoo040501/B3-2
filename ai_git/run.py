@@ -12,11 +12,11 @@ def run():
 
     if not 0 <= args.temperature <= 2:
         print("[ERROR] temperature는 0~2 사이여야 합니다.")
-        return
+        return 2
 
     if args.max_tokens <= 0:
         print("[ERROR] max_tokens는 1 이상이어야 합니다.")
-        return
+        return 2
     
     api_key = os.getenv("AI_API_KEY")
 
@@ -25,7 +25,7 @@ def run():
     ############################################################
     if not api_key:
         print("[ERROR] AI_API_KEY 환경변수가 설정되지 않았습니다.")
-        return
+        return 1
 
     try:
         status = get_git_status()
@@ -33,7 +33,7 @@ def run():
 
     except RuntimeError as e:
         print(f"[ERROR] {e}")
-        return
+        return 1
 
     if not status.strip():
         print("[INFO] 변경 사항이 없습니다.")
@@ -78,12 +78,12 @@ def run():
 
     if response is None:
         print("[ERROR] AI API 요청에 실패했습니다.")
-        return
+        return 1
 
     if response.status_code != 200:
         print("[ERROR] AI API 호출 실패")
         print(response.text)
-        return
+        return 1
 
     content = response.json()["choices"][0]["message"]["content"]
 
@@ -94,6 +94,7 @@ def run():
 
     if not valid:
         print(f"[WARN] 출력 형식 검증 실패: {error}")
+        return 2
         
     if args.command == "commit":
         print("[DONE] 커밋 메시지 생성 완료")
