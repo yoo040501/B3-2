@@ -25,6 +25,7 @@ def run():
     ############################################################
     if not api_key:
         print("[ERROR] AI_API_KEY 환경변수가 설정되지 않았습니다.")
+        print('예: export AI_API_KEY="YOUR_KEY"')
         return 1
 
     try:
@@ -110,3 +111,5 @@ def run():
         print("\n--- PR Draft ---")
         print(content)
         print("----------------")
+
+    print("[INFO] 생성 결과를 검토한 후 사용하세요.")
