@@ -52,6 +52,7 @@ def run():
     )
 
     if args.safe_mode:
+        status = mask_sensitive_info(status)
         diff = mask_sensitive_info(diff)
         diff = limit_diff(diff)
         print("[INFO] Safe Mode 적용: 민감정보 마스킹 및 diff 200줄 제한")

@@ -11,9 +11,9 @@ def mask_sensitive_info(text):
 
     # API Key처럼 보이는 값
     text = re.sub(
-        r'(?i)(api[_-]?key\s*[=:]\s*)["\']?[^"\',\s]+',
+        r'''(?i)(\b(?:ai[_-])?api[_-]?key\b["']?\s*[=:]\s*)(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|[^\s,;#}\]]+)''',
         r'\1[REDACTED_API_KEY]',
-        text
+        text,
     )
 
     # Bearer Token

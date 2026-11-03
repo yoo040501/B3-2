@@ -21,13 +21,17 @@ def get_git_diff():
         ("스테이징한 변경", ["git", "diff", "--cached"]),
         ("스테이징하지 않은 변경", ["git", "diff"]),
     ]:
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True)
         if result.returncode != 0:
             raise RuntimeError(f"{label}을 수집하지 못했습니다.")
 
-        if result.stdout.strip():
-            parts.append(f"[{label}]\n{result.stdout}")
+        try:
+            diff_text = result.stdout.decode("utf-8")
+        except UnicodeDecodeError:
+            diff_text = result.stdout.decode("cp949", errors="replace")
 
+        if diff_text.strip():
+            parts.append(f"[{label}]\n{diff_text}")
     return "\n\n".join(parts)
 
 def limit_diff(diff, max_lines=200):
