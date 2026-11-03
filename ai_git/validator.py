@@ -26,36 +26,29 @@ def validate_pr(content):
     if not lines:
         return False, "PR 내용이 비어 있습니다."
 
-    title = lines[0]
+    required_sections = ["## Why", "## What", "## How to Test"]
+    title = lines[0].strip()
+
+    if title in required_sections:
+        return False, "PR 제목이 없습니다. 첫 줄에 제목을 작성해주세요."
 
     if len(title) > 80:
         return False, "PR 제목이 80자를 초과했습니다."
 
-    required_sections = [
-        "## Why",
-        "## What",
-        "## How to Test"
-    ]
+    body = [line.strip() for line in lines[1:]]
+    headers = [line for line in body if line in required_sections]
 
     for section in required_sections:
-        if section not in content:
+        if section not in headers:
             return False, f"{section} 섹션이 없습니다."
 
-    for i, section in enumerate(required_sections):
-        start = content.find(section) + len(section)
-
-        if i + 1 < len(required_sections):
-            end = content.find(required_sections[i + 1])
-            section_content = content[start:end]
-        else:
-            section_content = content[start:]
-
-        has_bullet = any(
-            line.strip().startswith("- ")
-            for line in section_content.splitlines()
-        )
-
-        if not has_bullet:
+    if headers != required_sections:
+        return False, "Why, What, How to Test 섹션을 순서대로 한 번씩 작성해주세요."
+    
+    for index, section in enumerate(required_sections):
+        start = body.index(section) + 1
+        end = body.index(required_sections[index + 1]) if index + 1 < len(headers) else len(body)
+        if not any(line.startswith("- ") for line in body[start:end]):
             return False, f"{section} 섹션에 불릿이 없습니다."
 
     return True, None

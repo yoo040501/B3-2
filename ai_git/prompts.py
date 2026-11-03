@@ -33,6 +33,8 @@ def build_pr_prompt(status, diff):
 
 출력 형식:
 
+<변경 내용을 한 줄로 요약한 PR 제목>
+
 ## Why
 - 변경 이유
 

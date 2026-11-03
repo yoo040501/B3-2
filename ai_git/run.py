@@ -40,6 +40,10 @@ def run():
         print("[INFO] 변경 사항이 없습니다.")
         return
 
+    if not diff.strip():
+        print("[INFO] 변경 목록은 있지만 요약할 diff가 없습니다.")
+        print("[INFO] 새 파일을 요약하려면 git add 후 다시 실행하세요.")
+        return
     file_count = len(status.splitlines())
 
     print(
@@ -69,33 +73,54 @@ def run():
     else:
         prompt = build_pr_prompt(status, diff)
 
-    response = call_ai(
-        api_key,
-        prompt,
-        args.model,
-        args.temperature,
-        args.max_tokens
-    )
+    validate = validate_commit if args.command == "commit" else validate_pr
+    request_prompt = prompt
 
-    if response is None:
-        print("[ERROR] AI API 요청에 실패했습니다.")
-        return 1
+    for attempt in range(2):
+        response = call_ai(
+            api_key, request_prompt, args.model, args.temperature, args.max_tokens
+        )
 
-    if response.status_code != 200:
-        print("[ERROR] AI API 호출 실패")
-        print(response.text)
-        return 1
+        if response is None or response.status_code >= 500:
+            if attempt == 0:
+                print("[WARN] 일시적인 요청 실패로 한 번 더 시도합니다.")
+                continue
+            if response is None:
+                print("[ERROR] 네트워크 오류로 AI 응답을 받지 못했습니다.")
+            else:
+                print(f"[ERROR] AI 서버 오류 (HTTP {response.status_code})")
+            return 1
 
-    content = response.json()["choices"][0]["message"]["content"]
+        if response.status_code != 200:
+            print(f"[ERROR] AI API 호출 실패 (HTTP {response.status_code})")
+            print(response.text)
+            return 1
 
-    if args.command == "commit":
-        valid, error = validate_commit(content)
-    else:
-        valid, error = validate_pr(content)
+        try:
+            content = response.json()["choices"][0]["message"]["content"]
+        except (ValueError, KeyError, IndexError, TypeError):
+            print("[ERROR] AI 응답에서 생성된 텍스트를 찾을 수 없습니다.")
+            return 1
 
-    if not valid:
+        if not isinstance(content, str):
+            print("[ERROR] AI 응답의 본문이 텍스트 형식이 아닙니다.")
+            return 1
+
+        valid, error = validate(content)
+        if valid:
+            break
+
         print(f"[WARN] 출력 형식 검증 실패: {error}")
-        return 2
+        if attempt == 1:
+            print("[ERROR] 두 번째 응답도 형식에 맞지 않습니다.")
+            return 2
+
+        print("[INFO] 검증 결과를 반영해 한 번 더 생성합니다.")
+        request_prompt = (
+            f"{prompt}\n\n"
+            f"이전 응답이 다음 규칙을 위반했습니다: {error}\n"
+            "위 Git 변경사항을 바탕으로 해당 규칙을 지켜 다시 작성해주세요."
+        )
         
     if args.command == "commit":
         print("[DONE] 커밋 메시지 생성 완료")
